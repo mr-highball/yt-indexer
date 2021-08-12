@@ -31,6 +31,7 @@ begin
     end;
 
   //todo... index videos
+  LIndexer.Run;
 
   //once finished save to the settings file
   if not (EZSerialize<TYTIndexer>(LIndexer, LJSON, LError)) then
