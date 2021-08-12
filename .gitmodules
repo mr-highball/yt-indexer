@@ -1,0 +1,3 @@
+[submodule "src/ezjson"]
+	path = src/ezjson
+	url = https://github.com/mr-highball/ezjson
