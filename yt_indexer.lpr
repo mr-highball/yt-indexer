@@ -41,6 +41,10 @@ begin
     //wait for user
     ReadLn;
 
+    LIndexer.Stop;
+    while LIndexer.Running do
+      Sleep(50);
+
     //once finished save to the settings file
     if not (EZSerialize<TYTIndexer>(LIndexer, LJSON, LError)) then
       WriteLn('unable to serialize indexer [' + LError + ']');
