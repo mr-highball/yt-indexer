@@ -202,7 +202,7 @@ begin
               J := 0;
 
             //set the queue date to be offset by the remaining msecs and calls we have
-            LWork.Key := IncMilliSecond(LNow, LMSInc);
+            LWork.Key := IncMilliSecond(LNow, LMSInc * (I + 1));
 
             //set the value to be the keyword we're querying for
             LWork.Value := Trim(LKeys[J]);
@@ -506,12 +506,11 @@ const
   SQL_THUMB_CLOSE    = 'WHERE EXISTS (select 1 from last_snip);' + sLineBreak;
 var
   I: Integer;
-  LQuery , LError, LThumb: String;
+  LError, LQThumb, LQRes, LQSnip: String;
   LUnion : Boolean;
 begin
   //guarantee schema
   InitializeDB;
-
 
   //todo - this shouldn't be done here, but with a callback to the search list
   WriteLn('');
@@ -523,12 +522,13 @@ begin
     WriteLn('id:', AResponse.items[I].id.videoId, ' title:', AResponse.items[I].snippet.title);
     with AResponse.items[I] do
     begin
-      LQuery := SQL_INSERT_RES
+      LQRes   := SQL_INSERT_RES
                   .Replace('$1', QuotedStr(id.channelId))
                   .Replace('$2', QuotedStr(id.kind))
                   .Replace('$3', QuotedStr(id.playlistId))
-                  .Replace('$4', QuotedStr(id.videoId)) + sLineBreak +
-                SQL_INSERT_SNIPPET
+                  .Replace('$4', QuotedStr(id.videoId)) + sLineBreak;
+
+      LQSnip  := SQL_INSERT_SNIPPET
                   .Replace('$1', QuotedStr(snippet.title))
                   .Replace('$2', QuotedStr(snippet.channelTitle))
                   .Replace('$3', QuotedStr(snippet.description))
@@ -536,11 +536,11 @@ begin
                   .Replace('$5', QuotedStr(FormatDateTime('yyyy-MM-dd HH:mm:ss', snippet.publishedAt))) + sLineBreak;
 
       LUnion := False;
-      LThumb := '';
+      LQThumb := '';
       if Assigned(snippet.thumbnails.standard) then
       begin
         LUnion := True;
-        LThumb := SQL_THUMB_STD
+        LQThumb := SQL_THUMB_STD
                     .Replace('$1', IntToStr(snippet.thumbnails.standard.height))
                     .Replace('$2', IntToStr(snippet.thumbnails.standard.width))
                     .Replace('$3', QuotedStr(snippet.thumbnails.standard.url));
@@ -549,9 +549,9 @@ begin
       if Assigned(snippet.thumbnails.medium) then
       begin
         if LUnion then
-          LThumb := LThumb + 'UNION' + sLineBreak;
+          LQThumb := LQThumb + 'UNION' + sLineBreak;
 
-        LThumb := LThumb + SQL_THUMB_MED
+        LQThumb := LQThumb + SQL_THUMB_MED
                     .Replace('$1', IntToStr(snippet.thumbnails.medium.height))
                     .Replace('$2', IntToStr(snippet.thumbnails.medium.width))
                     .Replace('$3', QuotedStr(snippet.thumbnails.medium.url));
@@ -561,9 +561,9 @@ begin
       if Assigned(snippet.thumbnails.high) then
       begin
         if LUnion then
-          LThumb := LThumb + 'UNION' + sLineBreak;
+          LQThumb := LQThumb + 'UNION' + sLineBreak;
 
-        LThumb := LThumb + SQL_THUMB_HIGH
+        LQThumb := LQThumb + SQL_THUMB_HIGH
                     .Replace('$1', IntToStr(snippet.thumbnails.high.height))
                     .Replace('$2', IntToStr(snippet.thumbnails.high.width))
                     .Replace('$3', QuotedStr(snippet.thumbnails.high.url));
@@ -573,20 +573,26 @@ begin
       if Assigned(snippet.thumbnails.maxres) then
       begin
         if LUnion then
-          LThumb := LThumb + 'UNION' + sLineBreak;
+          LQThumb := LQThumb + 'UNION' + sLineBreak;
 
-        LThumb := LThumb + SQL_THUMB_MAX
+        LQThumb := LQThumb + SQL_THUMB_MAX
                     .Replace('$1', IntToStr(snippet.thumbnails.maxres.height))
                     .Replace('$2', IntToStr(snippet.thumbnails.maxres.width))
                     .Replace('$3', QuotedStr(snippet.thumbnails.maxres.url));
         LUnion := True;
       end;
 
-      if not LThumb.IsEmpty then
-        LQuery := LQuery + SQL_THUMB_OPEN + LThumb + SQL_THUMB_CLOSE;
+      if not LQThumb.IsEmpty then
+        LQThumb := SQL_THUMB_OPEN + LQThumb + SQL_THUMB_CLOSE;
     end;
 
-    if not ExecuteSQL(LQuery, LError) then
+    if not ExecuteSQL(LQRes, LError) then
+      LogError(LError);
+
+    if not ExecuteSQL(LQSnip, LError) then
+      LogError(LError);
+
+    if (not LQThumb.IsEmpty) and (not ExecuteSQL(LQThumb, LError)) then
       LogError(LError);
   end;
 
