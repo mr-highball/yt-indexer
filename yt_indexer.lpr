@@ -13,6 +13,9 @@ var
   LIndexer : TYTIndexer;
   LJSON, LError : String;
 begin
+  WriteLn('youtube indexer - STARTED');
+  WriteLn('-----');
+  WriteLn('press any key to stop indexing...');
   LIndexer := TYTIndexer.Create(nil);
   try
     //load settings when we have them
@@ -41,6 +44,7 @@ begin
     //wait for user
     ReadLn;
 
+    WriteLn('stopping...');
     LIndexer.Stop;
     while LIndexer.Running do
       Sleep(50);
@@ -57,6 +61,9 @@ begin
         Free;
       end;
     end;
+    WriteLn('youtube indexer - STOPPED');
+    WriteLn('press any key to exit...');
+    WriteLn('-----');
     ReadLn;
   finally
     LIndexer.Free;

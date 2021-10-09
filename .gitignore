@@ -77,3 +77,4 @@ lib/
 *.json
 *.txt
 *.log
+*.db
