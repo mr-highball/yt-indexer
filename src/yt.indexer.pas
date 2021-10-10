@@ -42,7 +42,6 @@ type
     FDBName: String;
     FQuotaCost: Integer;
     FKey : String;
-    FError : String;
     FPool : IEZThreadPool;
     FStopRequest : Boolean;
     FCritical : TCriticalSection;
@@ -50,7 +49,6 @@ type
     FQueue : TWorkQueue;
     FRunning : Boolean;
     FConnection : TSQLite3Connection;
-    function GetError: String;
     function GetKey: String;
     function GetRemaining: Integer;
     function GetRunning: Boolean;
@@ -71,7 +69,6 @@ type
     procedure Stop;
 
     property Running : Boolean read GetRunning;
-    property Error : String read GetError;
 
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -124,11 +121,6 @@ end;
 function TYTIndexer.GetKey: String;
 begin
   Result := FKey;
-end;
-
-function TYTIndexer.GetError: String;
-begin
-  Exit(FError);
 end;
 
 procedure TYTIndexer.SetKey(AValue: String);
@@ -222,7 +214,7 @@ begin
         Sleep(1000);
     end;
   except on E : Exception do
-    FError := E.Message;
+    LogError('Initialize::' + E.Message);
   end;
 end;
 
@@ -292,13 +284,13 @@ begin
         SaveQuery(LList);
       end
       else
-        FError := LResp.StatusText; //todo - shitty error handling, need to introduce callback or write to error stack
+        LogError('FetchResults::' + LResp.StatusText);
     finally
       LList.Free;
       LClient.Free;
     end;
   except on E : Exception do
-    FError := E.Message; //todo - see above 💩
+    LogError('FetchResults::' + E.Message);
   end;
 end;
 
@@ -479,6 +471,7 @@ procedure TYTIndexer.LogError(const AError: String);
 var
   LError : String;
 begin
+  WriteLn('[ERROR]-[', FormatDateTime('yyyy-MM-dd HH:mm:ss', Now), ']-', AError);
   if not ExecuteSQL(
     'INSERT INTO error_log(message)' +
     ' VALUES(' + QuotedStr(AError) + ');',
@@ -611,8 +604,9 @@ begin
     FStopRequest := False;
     FPool.Queue(Initialize, nil, nil);
     FPool.Start;
+    FRunning := True;
   except on E : Exception do
-    FError := E.Message;
+    LogError('Run::' + E.Message);
   end;
 end;
 
@@ -631,7 +625,6 @@ begin
   FQuotaCost := 100;
   FSpent := 0;
   FDBName := 'yt_indexer.db';
-  FError := '';
   FPool := NewEZThreadPool(4); //min worker count 3 (1 = observer, 2 = queueing, 3+ = worker(s))
   FPool.Settings.UpdateForceTerminate(True);
   FCritical := TCriticalSection.Create;

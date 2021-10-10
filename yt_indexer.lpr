@@ -39,7 +39,7 @@ begin
     if LIndexer.Running then
       WriteLn('indexing videos, press any key to stop...')
     else
-      WriteLn(LIndexer.Error);
+      WriteLn('unable to index video, see log. press any key to exit...');
 
     //wait for user
     ReadLn;
