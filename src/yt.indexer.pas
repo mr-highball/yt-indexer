@@ -144,7 +144,7 @@ end;
 
 procedure TYTIndexer.Initialize(const AThread: IEZThread);
 var
-  LNextQueue, LNow: TDateTime;
+  LNextQueue, LNow, LScheduled: TDateTime;
   LCalls, J, I: Integer;
   LRemainingMS, LMSInc: Int64;
   LKeys : TStringArray;
@@ -183,6 +183,7 @@ begin
         J := -1;
         FCritical.Enter;
         try
+          WriteLn('queuing ', LCalls, ' searches');
           for I := 0 to LCalls do
           begin
             if Length(LKeys) < 1 then
@@ -194,7 +195,14 @@ begin
               J := 0;
 
             //set the queue date to be offset by the remaining msecs and calls we have
-            LWork.Key := IncMilliSecond(LNow, LMSInc * (I + 1));
+            LScheduled := IncMilliSecond(LNow, LMSInc * (I + 1));
+
+            //when our scheduled date extends beyond our daily quota is, go ahead and queue this work
+            if DaysBetween(LNow, LScheduled) >= 1 then
+              LScheduled := LNow;
+
+            //our key is the date our work is scheduled for
+            LWork.Key := LScheduled;
 
             //set the value to be the keyword we're querying for
             LWork.Value := Trim(LKeys[J]);
@@ -202,6 +210,8 @@ begin
             //now queue the work and schedule it to the pool
             FQueue.Enqueue(LWork);
             FPool.Queue(FetchResults, nil, nil);
+
+            WriteLn('search scheduled for-[' + LWork.Value + ']', ' on-[' + FormatDateTime('yyyy-MM-dd HH:mm:ss', UniversalTimeToLocal(LWork.Key)) + ']');
           end;
         finally
           FCritical.Leave;
