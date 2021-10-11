@@ -207,8 +207,9 @@ begin
           FCritical.Leave;
         end;
 
-        //set the next 'queue date' to tomorrow
-        LNextQueue := LocalTimeToUniversal(Tomorrow);
+        //set the next 'queue date' to the 'start of' tomorrow
+        LNextQueue := IncDay(LNow);
+        ReplaceTime(LNextQueue, EncodeTime(0, 0, 0, 0));
       end
       else
         Sleep(1000);
