@@ -7,7 +7,8 @@ uses
   Classes,
   SysUtils,
   yt.indexer,
-  ezjson;
+  ezjson,
+  yt.console;
 
 var
   LIndexer : TYTIndexer;
@@ -18,6 +19,9 @@ begin
   WriteLn('press any key to stop indexing...');
   LIndexer := TYTIndexer.Create(nil);
   try
+    LIndexer.OnInfo := WriteInfo;
+    LIndexer.OnError := WriteError;
+
     //load settings when we have them
     if FileExists('appsettings.json') then
       with TStringStream.Create do

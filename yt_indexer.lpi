@@ -28,6 +28,11 @@
             <OtherUnitFiles Value="src;src\ezjson\src;src\ezthreads\src"/>
             <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
           </SearchPaths>
+          <Parsing>
+            <SyntaxOptions>
+              <SyntaxMode Value="Delphi"/>
+            </SyntaxOptions>
+          </Parsing>
           <CodeGeneration>
             <SmartLinkUnit Value="True"/>
             <TargetOS Value="win32"/>
@@ -58,6 +63,10 @@
       </Unit>
       <Unit>
         <Filename Value="src\yt.indexer.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="src\yt.console.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit>
     </Units>

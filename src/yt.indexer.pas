@@ -34,10 +34,15 @@ type
     type
       TWorkEntry = TPair<TDateTime, String>;
       TWorkQueue = TQueue<TWorkEntry>;
+  public
+    type
+      TLogCallback = procedure (const AMessage : String);
   strict private
     FDaily: Integer;
     FKeyCSV: String;
     FKeys: TStringArray;
+    FOnError: TLogCallback;
+    FOnInfo: TLogCallback;
     FSpent: Integer;
     FDBName: String;
     FQuotaCost: Integer;
@@ -59,6 +64,9 @@ type
     procedure FetchResults(const AThread : IEZThread);
     procedure InitializeDB;
   strict protected
+    procedure DoOnInfo(const AMessage : String);
+    procedure DoOnError(const AMessage : String);
+
     function RandomizeKeywords : TStringArray;
     function ExecuteSQL(const ASQL: String; out Error: String): Boolean; //if we need to can rip our old work off to return json https://github.com/mr-highball/dcl-hackathon-2019/blob/master/services/common/controller.base.pas#L466
     procedure LogError(const AError : String);
@@ -69,6 +77,9 @@ type
     procedure Stop;
 
     property Running : Boolean read GetRunning;
+
+    property OnInfo : TLogCallback read FOnInfo write FOnInfo;
+    property OnError : TLogCallback read FOnError write FOnError;
 
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -183,8 +194,8 @@ begin
         J := -1;
         FCritical.Enter;
         try
-          WriteLn('queuing ', LCalls, ' searches');
-          for I := 0 to LCalls do
+          DoOnInfo('queuing ' + IntToStr(LCalls) + ' searches');
+          for I := 0 to Pred(LCalls) do
           begin
             if Length(LKeys) < 1 then
               Break;
@@ -209,13 +220,16 @@ begin
 
             //now queue the work and schedule it to the pool
             FQueue.Enqueue(LWork);
-            FPool.Queue(FetchResults, nil, nil);
 
-            WriteLn('search scheduled for-[' + LWork.Value + ']', ' on-[' + FormatDateTime('yyyy-MM-dd HH:mm:ss', UniversalTimeToLocal(LWork.Key)) + ']');
+            DoOnInfo('search scheduled for-[' + LWork.Value + ']' + ' on-[' + FormatDateTime('yyyy-MM-dd HH:mm:ss' , UniversalTimeToLocal(LWork.Key)) + ']');
           end;
         finally
           FCritical.Leave;
         end;
+
+        //now that we slotted out work, queue the same amount of calls
+        for I := 0 to Pred(LCalls) do
+          FPool.Queue(FetchResults, nil, nil);
 
         //set the next 'queue date' to the 'start of' tomorrow
         LNextQueue := IncDay(LNow);
@@ -239,12 +253,14 @@ var
   LQuery: String;
   LJSON: TJSONData;
 begin
-  InitSSLInterface; //avoid EInOutError for openssl in non-main thread (https://forum.lazarus.freepascal.org/index.php?topic=40773.0)
   LList := TSearchListResponse.Create();
   LClient := TFPHTTPWebClient.Create(nil);
   LReq := LClient.CreateRequest;
   try
     try
+      //avoid EInOutError for openssl in non-main thread (https://forum.lazarus.freepascal.org/index.php?topic=40773.0)
+      InitSSLInterface;
+
       //pull the keyword we're searching and time we have to wait until
       FCritical.Enter;
       try
@@ -426,6 +442,18 @@ begin
   end;
 end;
 
+procedure TYTIndexer.DoOnInfo(const AMessage: String);
+begin
+  if Assigned(FOnInfo) then
+    FOnInfo(AMessage);
+end;
+
+procedure TYTIndexer.DoOnError(const AMessage: String);
+begin
+  if Assigned(FOnError) then
+    FOnError(AMessage);
+end;
+
 function TYTIndexer.RandomizeKeywords: TStringArray;
 var
   I: Integer;
@@ -482,7 +510,7 @@ procedure TYTIndexer.LogError(const AError: String);
 var
   LError : String;
 begin
-  WriteLn('[ERROR]-[', FormatDateTime('yyyy-MM-dd HH:mm:ss', Now), ']-', AError);
+  DoOnError(FormatDateTime('yyyy-MM-dd HH:mm:ss', Now) + ']-' + AError);
   if not ExecuteSQL(
     'INSERT INTO error_log(message)' +
     ' VALUES(' + QuotedStr(AError) + ');',
@@ -517,13 +545,13 @@ begin
   InitializeDB;
 
   //todo - this shouldn't be done here, but with a callback to the search list
-  WriteLn('');
-  WriteLn('query saving ', 'results: ', Length(AResponse.items), ' time: ', FormatDateTime('yyyy-MM-dd HH:mm:ss', Now));
-  WriteLn('------------');
+  DoOnInfo('');
+  DoOnInfo('query saving ' + 'results: ' + IntToStr(Length(AResponse.items)) + ' time: ' + FormatDateTime('yyyy-MM-dd HH:mm:ss', Now));
+  DoOnInfo('------------');
 
   for I := 0 to High(AResponse.items) do
   begin
-    WriteLn('id:', AResponse.items[I].id.videoId, ' title:', AResponse.items[I].snippet.title);
+    DoOnInfo('id:' + AResponse.items[I].id.videoId + ' title:' + AResponse.items[I].snippet.title);
     with AResponse.items[I] do
     begin
       LQRes   := SQL_INSERT_RES
@@ -600,7 +628,7 @@ begin
       LogError(LError);
   end;
 
-  WriteLn('------------');
+  DoOnInfo('------------');
 end;
 
 class function TYTIndexer.DateTimeDiffMS(const ANow, AThen: TDateTime): Int64;
@@ -636,7 +664,7 @@ begin
   FQuotaCost := 100;
   FSpent := 0;
   FDBName := 'yt_indexer.db';
-  FPool := NewEZThreadPool(4); //min worker count 3 (1 = observer, 2 = queueing, 3+ = worker(s))
+  FPool := NewEZThreadPool(3); //min worker count 3 (1 = observer, 2 = queueing, 3+ = worker(s))
   FPool.Settings.UpdateForceTerminate(True);
   FCritical := TCriticalSection.Create;
   FDBCritical := TCriticalSection.Create;
