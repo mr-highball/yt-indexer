@@ -526,8 +526,10 @@ const
 
   //currently returning support only returns to caller, so batching isn't so easy and need to use last_insert_rowid()
   //https://www.sqlite.org/lang_returning.html
-  SQL_INSERT_SNIPPET = 'INSERT OR IGNORE INTO snippet(title, channel_title, description, live_broadcast_content, published_at, resource_id)' +
-                       '  VALUES($1, $2, $3, $4, $5, last_insert_rowid());';
+  SQL_INSERT_SNIPPET = 'with last_res as (select last_insert_rowid() as resource_id where last_insert_rowid() = (SELECT MAX(id)  FROM resource)) ' + sLineBreak +
+                       'INSERT OR IGNORE INTO snippet(title, channel_title, description, live_broadcast_content, published_at, resource_id)' + sLineBreak +
+                       '  SELECT $1, $2, $3, $4, $5, (select resource_id from last_res)' + sLineBreak +
+                       'WHERE EXISTS (select 1 from last_res);' + sLineBreak;
 
   SQL_THUMB_OPEN     = 'with last_snip as (select last_insert_rowid() as snippet_id where last_insert_rowid() = (SELECT MAX(id)  FROM snippet)) ' + sLineBreak +
                        'INSERT OR IGNORE INTO thumbnails(type, height, width, url, snippet_id)' + sLineBreak;
