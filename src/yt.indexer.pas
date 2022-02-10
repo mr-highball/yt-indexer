@@ -38,6 +38,8 @@ type
     type
       TLogCallback = procedure (const AMessage : String);
   strict private
+    FChanCSV: String;
+    FChannels: TStringArray;
     FDaily: Integer;
     FKeyCSV: String;
     FKeys: TStringArray;
@@ -57,6 +59,7 @@ type
     function GetKey: String;
     function GetRemaining: Integer;
     function GetRunning: Boolean;
+    procedure SetChanCSV(const AValue: String);
     procedure SetKey(AValue: String);
     procedure SetKeyCSV(AValue: String);
     procedure SetRemaining(AValue: Integer);
@@ -68,6 +71,8 @@ type
     procedure DoOnError(const AMessage : String);
 
     function RandomizeKeywords : TStringArray;
+    function RandomizeChannels : TStringArray;
+
     function ExecuteSQL(const ASQL: String; out Error: String): Boolean; //if we need to can rip our old work off to return json https://github.com/mr-highball/dcl-hackathon-2019/blob/master/services/common/controller.base.pas#L466
     procedure LogError(const AError : String);
     procedure SaveQuery(const AResponse : TSearchListResponse);
@@ -102,8 +107,13 @@ type
     [JsonProperty('keywords_csv')] //workaround until collection support implemented
     property KeyWordCSV : String read FKeyCSV write SetKeyCSV;
 
+    [JsonProperty('channels_csv')] //workaround until collection support implemented
+    property ChannelCSV : String read FChanCSV write SetChanCSV;
+
     //[JsonProperty('keywords')] //need to not be lazy and implement collection support in ezjson... 🤷
     property KeyWords : TStringArray read FKeys write FKeys;
+
+    property Channels : TStringArray read FChannels write FChannels;
   end;
 
 implementation
@@ -127,6 +137,12 @@ end;
 function TYTIndexer.GetRunning: Boolean;
 begin
   Result := FRunning;
+end;
+
+procedure TYTIndexer.SetChanCSV(const AValue: String);
+begin
+  FChanCSV := AValue;
+  FChannels := FChanCSV.Split(',');
 end;
 
 function TYTIndexer.GetKey: String;
@@ -188,7 +204,11 @@ begin
           LMSInc := 1;
 
         //shuffle the keyword list to produce a random smattering of searches
-        LKeys := RandomizeKeywords;
+        if Length(FChannels) < 1 then
+          LKeys := RandomizeKeywords
+        //otherwise we're only indexing a listing of channels
+        else
+          LKeys := RandomizeChannels;
 
         //produce enough calls to the pool to handle the work remaining for the day
         J := -1;
@@ -215,7 +235,7 @@ begin
             //our key is the date our work is scheduled for
             LWork.Key := LScheduled;
 
-            //set the value to be the keyword we're querying for
+            //set the value to be the keyword (or channel id) we're querying for
             LWork.Value := Trim(LKeys[J]);
 
             //now queue the work and schedule it to the pool
@@ -285,11 +305,20 @@ begin
       //attempt to query youtube
       LQuery := EncodeURLElement(LWork.Value);
 
-      LResp := LClient.ExecuteRequest(
-        'GET',
-        'https://youtube.googleapis.com/youtube/v3/search?part=snippet&maxResults=50&q=' + LQuery + '&order=date&key=' + FKey,
-         LReq
-      );
+      //keyword searching is our default behavior
+      if Length(FChannels) < 1 then
+        LResp := LClient.ExecuteRequest(
+          'GET',
+          'https://youtube.googleapis.com/youtube/v3/search?part=snippet&maxResults=50&q=' + LQuery + '&order=date&key=' + FKey,
+           LReq
+        )
+      //otherwise, we're specifically looking at a channel
+      else
+        LResp := LClient.ExecuteRequest(
+          'GET',
+          'https://youtube.googleapis.com/youtube/v3/search?part=snippet&maxResults=50&channelId=' + LQuery + '&order=date&key=' + FKey,
+           LReq
+        );
 
       if (LResp.StatusCode >= 200) and (LResp.StatusCode < 300) then
       begin
@@ -474,6 +503,31 @@ begin
     //grab a random keyword and store to result
     for I := Low(Result) to High(Result) do
       Result[I] := FKeys[LIndexes.ExtractIndex(RandomRange(0, LIndexes.Count))];
+  finally
+    LIndexes.Free;
+  end;
+end;
+
+function TYTIndexer.RandomizeChannels: TStringArray;
+var
+  I: Integer;
+  LIndexes : TList<Integer>;
+begin
+  Result := Default(TStringArray);
+  Randomize;
+
+  LIndexes := TList<Integer>.Create;
+  try
+    //match our internal size
+    SetLength(Result, Length(FChannels));
+
+    //store all the indexes and we'll use to pop from
+    for I := Low(Result) to High(Result) do
+      LIndexes.Add(I);
+
+    //grab a random channel and store to result
+    for I := Low(Result) to High(Result) do
+      Result[I] := FChannels[LIndexes.ExtractIndex(RandomRange(0, LIndexes.Count))];
   finally
     LIndexes.Free;
   end;
