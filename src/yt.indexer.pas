@@ -22,7 +22,8 @@ uses
   syncobjs,
   Generics.Collections,
   SQLite3Conn,
-  SQLDB;
+  SQLDB,
+  DB;
 
 type
 
@@ -65,6 +66,7 @@ type
     procedure SetRemaining(AValue: Integer);
     procedure Initialize(const AThread : IEZThread);
     procedure FetchResults(const AThread : IEZThread);
+    procedure PollForMetadata(const AThread : IEZThread);
     procedure InitializeDB;
   strict protected
     procedure DoOnInfo(const AMessage : String);
@@ -73,7 +75,9 @@ type
     function RandomizeKeywords : TStringArray;
     function RandomizeChannels : TStringArray;
 
-    function ExecuteSQL(const ASQL: String; out Error: String): Boolean; //if we need to can rip our old work off to return json https://github.com/mr-highball/dcl-hackathon-2019/blob/master/services/common/controller.base.pas#L466
+    function ExecuteSQL(const ASQL: String; out Error: String): Boolean;
+    function ExecuteResultSQL(const ASQL : String; const ADataset : TSQLQuery;
+      out Error : String; const ASingleRead : Boolean = True) : Boolean;
     procedure LogError(const AError : String);
     procedure SaveQuery(const AResponse : TSearchListResponse);
     class function DateTimeDiffMS(const ANow, AThen : TDateTime) : Int64; static;
@@ -289,13 +293,13 @@ begin
         FCritical.Leave;
       end;
 
-      //sleep in increments and until the alotted time (if any) to allow for stop requests
+      //wait until the alotted time (if any) to allow for stop requests
       while DateTimeDiffMS(LocalTimeToUniversal(Now), LWork.Key) < 0 do
       begin
         if FStopRequest then
           Exit;
 
-        Sleep(100);
+        TThread.Yield;
       end;
 
       //check once more to see if we need to stop
@@ -350,6 +354,50 @@ begin
   end;
 end;
 
+procedure TYTIndexer.PollForMetadata(const AThread: IEZThread);
+var
+  LNow, LNextQueue: TDateTime;
+begin
+  LNextQueue := Default(TDateTime);
+
+  while not FStopRequest do
+  begin
+    try
+      try
+        //check if our next poll is due
+        LNow := LocalTimeToUniversal(Now);
+
+        //see if we need to queue up the index calls
+        if DateTimeDiffMS(LNow, LNextQueue) > 0 then
+        begin
+          //fetch the maximum amount of video id's that need updating
+          //...
+
+          //construct the id parameter for each record returned
+          //...
+
+          //make the web request
+          //https://youtube.googleapis.com/youtube/v3/videos?part=contentDetails&part=fileDetails&part=statistics&id=abcd%2C1234&id=acbde&key=[YOUR_API_KEY]
+          //...
+
+          //on success, try to parse to a TVideoListResponse
+          //...
+
+          //decrement quota by the cost
+          //todo - issue #9
+
+          //save results to our metadata table(s)
+          //...
+
+        end;
+      except on E : Exception do
+        LogError('PollForMetaData::' + E.Message);
+      end;
+    finally
+      TThread.Yield;
+    end;
+  end;
+end;
 procedure TYTIndexer.InitializeDB;
   procedure CreateErrorTable;
   var
@@ -560,6 +608,36 @@ begin
   end;
 end;
 
+function TYTIndexer.ExecuteResultSQL(const ASQL: String;
+  const ADataset: TSQLQuery; out Error: String;
+  const ASingleRead: Boolean): Boolean;
+var
+  LQuery : TSQLQuery;
+begin
+  Result := False;
+  FDBCritical.Enter;
+  try
+    try
+      if ADataset.Active then
+        ADataset.Close;
+
+      //initialize the query for read-only operation
+      ADataset.SQLConnection := FConnection;
+      ADataset.ReadOnly := True;
+
+      //discards records after reading, smaller footprint
+      if ASingleRead then
+        ADataset.UniDirectional := True;
+
+      ADataset.SQL.Text := ASQL;
+      ADataset.Open;
+    except on E : Exception do
+      Error := E.Message;
+    end;
+  finally
+    FDBCritical.Leave;
+  end;
+end;
 procedure TYTIndexer.LogError(const AError: String);
 var
   LError : String;
